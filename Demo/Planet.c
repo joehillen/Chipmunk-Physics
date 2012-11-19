@@ -22,7 +22,10 @@
 #include "chipmunk.h"
 #include "ChipmunkDemo.h"
 
-static cpBody *planetBody;
+#define MAX_PLANETS 5
+
+static cpBody *planetBodies[MAX_PLANETS];
+static int planetBodyCnt = 0;
 
 static cpFloat gravityStrength = 5.0e6f;
 
@@ -36,7 +39,8 @@ update(cpSpace *space)
 		cpSpaceStep(space, dt);
 		
 		// Update the static body spin so that it looks like it's rotating.
-		cpBodyUpdatePosition(planetBody, dt);
+        for (int j = 0; j < planetBodyCnt; ++j)
+            cpBodyUpdatePosition(planetBodies[j], dt);
 	}
 }
 
@@ -46,11 +50,18 @@ planetGravityVelocityFunc(cpBody *body, cpVect gravity, cpFloat damping, cpFloat
 	// Gravitational acceleration is proportional to the inverse square of
 	// distance, and directed toward the origin. The central planet is assumed
 	// to be massive enough that it affects the satellites but not vice versa.
-	cpVect p = cpBodyGetPos(body);
-	cpFloat sqdist = cpvlengthsq(p);
-	cpVect g = cpvmult(p, -gravityStrength / (sqdist * cpfsqrt(sqdist)));
-	
-	cpBodyUpdateVelocity(body, g, damping, dt);
+
+    cpVect gtotal = cpv(0,0);
+
+    for (int i = 0; i < planetBodyCnt; ++i)
+    {
+        cpVect p = cpvsub(cpBodyGetPos(body), cpBodyGetPos(planetBodies[i]));
+        cpFloat sqdist = cpvlengthsq(p);
+        cpVect g = cpvmult(p, -gravityStrength / (sqdist * cpfsqrt(sqdist)));
+        gtotal = cpvadd(g, gtotal);
+    }
+
+	cpBodyUpdateVelocity(body, gtotal, damping, dt);
 }
 
 static cpVect
@@ -100,23 +111,36 @@ add_box(cpSpace *space)
 	cpShapeSetFriction(shape, 0.7f);
 }
 
-static cpSpace *
-init(void)
+void
+add_planet(cpSpace *space, int x, int y)
 {
+    cpBody *planet = cpBodyNew(INFINITY, INFINITY);
+
 	// Create a rouge body to control the planet manually.
-	planetBody = cpBodyNew(INFINITY, INFINITY);
-	cpBodySetAngVel(planetBody, 0.2f);
+	cpBodySetAngVel(planet, 0.7f);
+    cpBodySetPos(planet, cpv(x, y));
 	
-	cpSpace *space = cpSpaceNew();
-	cpSpaceSetIterations(space, 20);
-	
-	for(int i=0; i<30; i++)
-		add_box(space);
-	
-	cpShape *shape = cpSpaceAddShape(space, cpCircleShapeNew(planetBody, 70.0f, cpvzero));
+	cpShape *shape = cpSpaceAddShape(space, cpCircleShapeNew(planet, 20.0f, cpvzero));
 	cpShapeSetElasticity(shape, 1.0f);
 	cpShapeSetFriction(shape, 1.0f);
 	cpShapeSetLayers(shape, NOT_GRABABLE_MASK);
+
+    planetBodies[planetBodyCnt++] = planet;
+}
+
+static cpSpace *
+init(void)
+{
+	cpSpace *space = cpSpaceNew();
+	cpSpaceSetIterations(space, 20);
+	
+	for(int i=0; i<7; i++)
+		add_box(space);
+
+    add_planet(space, 0, 200);
+    add_planet(space, -200, 0);
+    add_planet(space, 200, 0);
+    add_planet(space, 0, -200);
 	
 	return space;
 }
@@ -125,7 +149,9 @@ static void
 destroy(cpSpace *space)
 {
 	ChipmunkDemoFreeSpaceChildren(space);
-	cpBodyFree(planetBody);
+    for (int i = 0; i < planetBodyCnt; ++i)
+        cpBodyFree(planetBodies[i]);
+    planetBodyCnt = 0;
 	cpSpaceFree(space);
 }
 
